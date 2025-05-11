@@ -1,4 +1,4 @@
-`timescale 1 ns / 100 ps
+`timescale 1ns/1ps
 
 module MainCode_tb;
 
@@ -13,7 +13,6 @@ module MainCode_tb;
     wire [6:0] HexLSBL;
     wire DOT;
 
-    // Instantiate the DUT
     MainCode uut (
         .CLK_50MHz(CLK_50MHz),
         .rst_n(rst_n),
@@ -26,80 +25,73 @@ module MainCode_tb;
         .DOT(DOT)
     );
 
-    // Clock generation
-    initial begin
-        CLK_50MHz = 0;
-        forever #10 CLK_50MHz = ~CLK_50MHz; // 50MHz → 20ns周期
-    end
+    initial CLK_50MHz = 0;
+    always #10 CLK_50MHz = ~CLK_50MHz;
 
-    // 7段译码到数字
-    function [7*8:1] seg_to_digit;
+    function [3:0] decode7seg;
         input [6:0] seg;
-        begin
-            case (seg)
-                7'b1000000: seg_to_digit = "0";
-                7'b1111001: seg_to_digit = "1";
-                7'b0100100: seg_to_digit = "2";
-                7'b0110000: seg_to_digit = "3";
-                7'b0011001: seg_to_digit = "4";
-                7'b0010010: seg_to_digit = "5";
-                7'b0000010: seg_to_digit = "6";
-                7'b1111000: seg_to_digit = "7";
-                7'b0000000: seg_to_digit = "8";
-                7'b0010000: seg_to_digit = "9";
-                default: seg_to_digit = "?";
-            endcase
-        end
+        case (seg)
+            7'b1000000: decode7seg = 4'd0;
+            7'b1111001: decode7seg = 4'd1;
+            7'b0100100: decode7seg = 4'd2;
+            7'b0110000: decode7seg = 4'd3;
+            7'b0011001: decode7seg = 4'd4;
+            7'b0010010: decode7seg = 4'd5;
+            7'b0000010: decode7seg = 4'd6;
+            7'b1111000: decode7seg = 4'd7;
+            7'b0000000: decode7seg = 4'd8;
+            7'b0010000: decode7seg = 4'd9;
+            default:    decode7seg = 4'd15;
+        endcase
     endfunction
 
-    // Test scenario
+    reg [27:0] last_hex;
+    always @(posedge uut.CLK_100Hz) begin
+        if ({HexMSBH, HexMSBL, HexLSBH, HexLSBL} !== last_hex) begin
+            $display("Mode: %s | Display = %d%d.%d%d | DOT=%b",
+                (ModeSel ? "Countdown" : "Stopwatch"),
+                decode7seg(HexMSBH),
+                decode7seg(HexMSBL),
+                decode7seg(HexLSBH),
+                decode7seg(HexLSBL),
+                DOT
+            );
+            last_hex <= {HexMSBH, HexMSBL, HexLSBH, HexLSBL};
+        end
+    end
+
     initial begin
-        $display("=== MainCode Testbench Start ===");
+        $display("=== Stopwatch + Countdown Mode Test Start ===");
 
-        rst_n = 0; StartStop = 0; ModeSel = 0; #100;
-        rst_n = 1; #100;
+        rst_n = 0;
+        StartStop = 1;
+        ModeSel = 0; // Stopwatch mode
+        #100;
+        rst_n = 1;
 
-        // Start stopwatch mode
-        StartStop = 1; #20; StartStop = 0;
+        #100_000;
 
-        // Run for a few increments
-        repeat (10) begin
-            #100000; // simulate time
-            $display("ModeA: Display = %s%s.%s%s | DOT=%b",
-                seg_to_digit(HexMSBH), seg_to_digit(HexMSBL),
-                seg_to_digit(HexLSBH), seg_to_digit(HexLSBL),
-                DOT);
-        end
+        // Start Stopwatch
+        $display(">>> Start Stopwatch");
+        StartStop = 0; #100_000; StartStop = 1;
 
-        // Switch to Mode B
-        ModeSel = 1; #200;
-        $display("Switched to Mode B (Countdown)");
+        // Run for 0.2s
+        #200_000_000;
 
-        // Start countdown
-        StartStop = 1; #20; StartStop = 0;
+        // Switch to Countdown
+        $display(">>> Switch to Countdown Mode");
+        ModeSel = 1;
+        #300_000;
 
-        // Run countdown for a few steps
-        repeat (10) begin
-            #1000000;
-            $display("ModeB: Display = %s%s.%s%s | DOT=%b",
-                seg_to_digit(HexMSBH), seg_to_digit(HexMSBL),
-                seg_to_digit(HexLSBH), seg_to_digit(HexLSBL),
-                DOT);
-        end
+        // Start Countdown
+        $display(">>> Start Countdown");
+        StartStop = 0; #100_000; StartStop = 1;
 
-        // Switch back to Mode A again
-        ModeSel = 0; #200;
-        $display("Switched back to Mode A");
+        // Run for 3s
+        #3_000_000_000;
 
-        // Wait and see if it's reset
-        #100000;
-        $display("Final: Display = %s%s.%s%s | DOT=%b",
-            seg_to_digit(HexMSBH), seg_to_digit(HexMSBL),
-            seg_to_digit(HexLSBH), seg_to_digit(HexLSBL),
-            DOT);
-
-        $display("=== MainCode Testbench Complete ===");
-        $finish;
+        $display("=== Simulation End ===");
+        $stop;
     end
 
 endmodule
